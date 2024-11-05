@@ -13,8 +13,6 @@ jobs:
         runs-on: ubuntu-latest              
         steps:
             # Use the specific setup-cli branch           
-            - name: Checkout the repository
-              uses: actions/checkout@v4
             - name: Get id token
               env:
                 OIDC_AUDIENCE: ${{ secrets.JFROG_OIDC_AUDIENCE }}
