@@ -12,15 +12,7 @@ jobs:
     auth:
         runs-on: ubuntu-latest              
         steps:
-            # Use the specific setup-cli branch
-            - name: Setup JFrog CLI
-              uses: jfrog/setup-jfrog-cli@v3
-              env:  
-                JF_URL: ${{ secrets.JF_URL }}
-              with:
-                oidc-provider-name: san-git-intergation
-                oidc-audience: jfrog-github
-           
+            # Use the specific setup-cli branch           
             - name: Checkout the repository
               uses: actions/checkout@v4
             - name: Get id token
