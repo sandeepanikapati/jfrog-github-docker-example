@@ -19,120 +19,50 @@ jobs:
         steps:
             # Use the specific setup-cli branch
             - name: Setup JFrog CLI
-              uses: jfrog/setup-jfrog-cli@v4
-              id: setup-cli
-              env:
-                JF_URL: https://${{ vars.JF_URL }}/
-                JF_PROJECT: ${{ vars.JF_PROJECT }}
+              uses: jfrog/setup-jfrog-cli@v3
+              env:  
+                JF_URL: ${{ secrets.JF_URL }}
               with:
-                  oidc-provider-name: jfrog-github-oidc
-
+                oidc-provider-name: san-git-intergation
+                oidc-audience: jfrog-github
+           
             - name: Checkout the repository
               uses: actions/checkout@v4
-
-
-            - name: configure jfrog environment
-              run: |
-                # Use a curated repository for python dependencies resolution
-                jf pip-config --repo-resolve=codeninjas-proj-python-virtual   
-
-            - name: configure environment
-              run: |    
-                pip install --upgrade pip     
-                python3 -m pip install --upgrade pip setuptools wheel sigstore
-                wheel -h
-                pip show setuptools
-                echo $VIRTUAL_ENV
-
-            - name: build project
-              run: |                                   
-                jf pip install -r requirements.txt  --module=jfrog-python-example                
-                python setup.py sdist bdist_wheel
-                cd dist && echo "hashes=$(sha256sum * | base64 -w0)" >> $GITHUB_OUTPUT
-
-            - name: publish python package
-              run: |
-                jf rt u dist/ codeninjas-proj-python-virtual/example-projects/ --module=jfrog-python-example
-
-      
+            - name: Get id token
+              env:
+                OIDC_AUDIENCE: ${{ secrets.JFROG_OIDC_AUDIENCE }}
+                run: |
+                     ID_TOKEN=$(curl -sLS -H "User-Agent: actions/oidc-client" -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq '.value' | tr -d '"')
+                     echo "ID_TOKEN=${ID_TOKEN}" >> $GITHUB_ENV
+            - name: Exchange token with access
+              env:
+                JF_URL: ${{ vars.JFROG_URL }}
+                ID_TOKEN: ${{env.ID_TOKEN}}
+                OIDC_PROVIDER: ${{ secrets.JFROG_OIDC_PROVIDER_NAME }}
+                run: |
+                    ACCESS_TOKEN=$(curl -X POST \
+                        -H "Content-Type: application/json" \
+                        "https://michaelsus.jfrog.io/access/api/v1/oidc/token" \
+                        -d "{\"grant_type\": \"urn:ietf:params:oauth:grant-type:token-exchange\", \"subject_token_type\":\"urn:ietf:params:oauth:token-type:id_token\", \"subject_token\": \"${ID_TOKEN}\", \"provider_name\": \"${OIDC_PROVIDER}\"}" \
+                      | jq .access_token | tr -d '"')
+                    echo "ACCESS_TOKEN=${ACCESS_TOKEN}" >> $GITHUB_ENV
+                      
             - name: Set up QEMU
               uses: docker/setup-qemu-action@v3                 
 
             - name: Authenticate Docker
               uses: docker/login-action@v3
-              with:
-                registry: ${{ vars.JF_URL }}
-                username: ${{ steps.setup-cli.outputs.oidc-user }}
-                password: ${{ steps.setup-cli.outputs.oidc-token }}
-
-            - name: Setup buildx instance
-              uses: docker/setup-buildx-action@v3
-              with:
-                use: true
-                platforms: linux/amd64,linux/arm64
-                install: true
+              env:
+                OIDC_PROVIDER: ${{ secrets.JFROG_OIDC_PROVIDER_NAME }}
+                OIDC_AUDIENCE: ${{ secrets.JFROG_OIDC_AUDIENCE }}
+                ACCESS_TOKEN: ${{ env.ACCESS_TOKEN }}
 
             - name: docker build through 
               run: |  
-                docker buildx ls
-                jf docker --version
-                jf docker build --tag ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }} --platform linux/amd64,linux/arm64 --metadata-file  metadata.json --push .
+                docker login --username sandeepa incloudmaster.jfrog.io --password ${{ env.ACCESS_TOKEN }}
                 
-            - name: docker scan
+            - name: docker pull
               run: |  
-                 jf docker pull ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}
-                 jf docker scan ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}   
-            #- name: docker build
-            #  run: |  
-            #    jf docker build --tag ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}-amd64 --platform  linux/amd64 --load .
-            #    #docker images
-            #    jf docker scan ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}-amd64                
-            #    jf docker push ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}-amd64
-                
-            #    jf docker build --tag ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}-arm64 --platform  linux/arm64 --load .
-            #    #docker images
-            #    jf docker scan ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}-arm64                
-            #    jf docker push ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}-arm64
-                
-            #    #echo "docker images scanned, now lets push a fat manifest and the images"
-            #    #docker manifest create  ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }} ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}-amd64 ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}-arm64                
-            #    #echo "docker manifest created"
-            #    #docker manifest push ${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}
-            #    #echo "docker manifest pushed"
-            #    #docker image save -o myimage.tar localhost:5000/myimage:latest
-                
+                 docker pull incloudmaster.jfrog.io/vj-docker-remote/ubuntu
 
-            - name: add docker package to build
-              run: |  
-                 echo "----------------"
-                 cat metadata.json
-                 echo "----------------"
-                 digest=$(cat metadata.json | jq '.["containerimage.digest"]')
-                 echo "digest=$digest"
-                 echo "${{ vars.JF_URL }}/${{ env.DOCKER_REPO }}/${{ env.IMAGE_NAME }}@$digest" > metadata.json
-                 jf rt build-docker-create ${{ env.DOCKER_REPO }} --image-file metadata.json 
-
-            - name: publish build info
-              run: |
-                jf rt build-collect-env 
-                jf rt build-add-dependencies .
-                jf rt build-add-git
-                jf rt build-publish
-
-            - name: build scan
-              run: |            
-                jf build-scan
-                
-            - name: Write to workflow job summary
-              run: |
-                    NOTE=$'>[!NOTE]\n>Frog Notes \n'
-                    TIP=$'>[!TIP]\n>Hello JFrog\n'
-                    IMPORTANT=$'>[!IMPORTANT]\n>Hello IMPORTANT NOTE\n'
-                    WARNING=$'>[!WARNING]\n>Hello WARNING NOTE\n'
-                    CAUTION=$'>[!CAUTION]\n>Hello CAUTION NOTE\n'
-                    echo "$NOTE" >> $GITHUB_STEP_SUMMARY
-                    echo "$TIP" >> $GITHUB_STEP_SUMMARY
-                    echo "$IMPORTANT" >> $GITHUB_STEP_SUMMARY
-                    echo "$WARNING" >> $GITHUB_STEP_SUMMARY
-                    echo "$CAUTION" >> $GITHUB_STEP_SUMMARY
 
