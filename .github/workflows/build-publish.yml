@@ -51,10 +51,8 @@ jobs:
                 ACCESS_TOKEN: ${{ env.ACCESS_TOKEN }}
                 run: |  
                   docker login --username sandeepa incloudmaster.jfrog.io --password ${{ env.ACCESS_TOKEN }}
+                  docker pull incloudmaster.jfrog.io/vj-docker-remote/ubuntu
 
-                
-            - name: docker pull
-              run: |  
-                 docker pull incloudmaster.jfrog.io/vj-docker-remote/ubuntu
+                 
 
 
