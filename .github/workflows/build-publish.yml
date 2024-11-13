@@ -32,8 +32,8 @@ jobs:
                  OIDC_PROVIDER: 'san-git-intergation'
                  ACCESS_TOKEN: ${{ env.ACCESS_TOKEN }}
               run: |
-                 docker login incloudmaster.jfrog.io --username sandeepa --password ${ACCESS_TOKEN}
-                 docker pull incloudmaster.jfrog.io/vj-docker-remote/hello-world
+                 docker login server.jfrog.io --username sandeepa --password ${ACCESS_TOKEN}
+                 docker pull server.jfrog.io/vj-docker-remote/hello-world
 
 
 
